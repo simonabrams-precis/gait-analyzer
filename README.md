@@ -57,6 +57,8 @@ To run the app as a public web app on [Streamlit Cloud](https://streamlit.io/clo
 
 **Note:** Streamlit Cloud’s free tier has a **1 GB memory limit**. The app warns if an uploaded video is over 200 MB; very large videos may cause the app to run out of memory. For best results, use videos under 200 MB and under a few minutes.
 
+**Video analysis on Cloud:** The Cloud environment may lack system libraries (e.g. for OpenCV/MediaPipe), so **Analyze** can fail with an environment error. The app will still load so you can view About and use the UI; for full video analysis, run the app locally with `streamlit run app.py`.
+
 ## Outputs
 
 All files are written next to the video (or in `--output-dir`):
