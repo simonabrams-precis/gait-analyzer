@@ -7,6 +7,7 @@ import os
 import tempfile
 import streamlit as st
 
+from about_content import render_about_content
 from job_runner import run_analysis
 
 FILMING_TIPS = """
@@ -72,6 +73,8 @@ def main():
         )
         with st.expander("Filming tips"):
             st.markdown(FILMING_TIPS)
+        with st.expander("About & FAQ"):
+            render_about_content()
 
     if video_file is not None and video_file.size > 200 * 1024 * 1024:
         st.warning(
