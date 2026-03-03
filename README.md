@@ -5,7 +5,7 @@ Analyzes running gait from a side-view video using MediaPipe Pose and rule-based
 ## Requirements
 
 - Python 3.10+
-- See `requirements.txt` for dependencies (MediaPipe, OpenCV, NumPy, Matplotlib)
+- See `requirements.txt` for dependencies (MediaPipe, OpenCV, NumPy, Matplotlib, Streamlit)
 
 ## Setup
 
@@ -16,6 +16,18 @@ pip install -r requirements.txt
 ```
 
 ## Usage
+
+### Web app (recommended)
+
+Run the Streamlit app locally:
+
+```bash
+streamlit run app.py
+```
+
+Then open the URL shown in the terminal (usually http://localhost:8501). Upload a video, set your height, and click **Analyze**. Results appear in tabs: annotated video, dashboard chart, and text report with download buttons.
+
+### CLI
 
 ```bash
 python analyze_gait.py --video path/to/run.mp4 --height 175
@@ -32,6 +44,18 @@ python analyze_gait.py --video path/to/run.mp4 --height 175
 ```bash
 python analyze_gait.py --video ~/Videos/treadmill.mp4 --height 175 --output-dir ./results
 ```
+
+## Deploying to Streamlit Cloud
+
+To run the app as a public web app on [Streamlit Cloud](https://streamlit.io/cloud):
+
+1. Push this project to a **public** GitHub repository.
+2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
+3. Click **New app**, then connect the repository and branch.
+4. Set **Main file path** to `app.py`.
+5. Leave **Advanced settings** as default (no environment variables are required for the basic version).
+
+**Note:** Streamlit Cloud’s free tier has a **1 GB memory limit**. The app warns if an uploaded video is over 200 MB; very large videos may cause the app to run out of memory. For best results, use videos under 200 MB and under a few minutes.
 
 ## Outputs
 
@@ -83,12 +107,4 @@ The report and JSON flag issues when:
 
 Stride is defined as **left foot strike to next left foot strike**; foot strikes are detected from ankle landmark motion.
 
-## Extending to a web app
-
-The code is structured so that:
-
-- **Pose extraction** (`pose_extractor.py`) takes a list of frames and returns landmark data (no file I/O).
-- **Metrics** (`metrics.py`) and **heuristics** (`heuristics.py`) take that data plus `height_cm` (and FPS) and return a results dict.
-- **Visualizer**, **dashboard**, and **reporter** consume the results dict only.
-
-So a FastAPI or Streamlit app can: accept an uploaded video and user height, run the same pipeline in memory, and return or stream the JSON, annotated frames, dashboard image, and report without changing these modules.
+The Streamlit app (`app.py`) and `job_runner.py` wrap the same pipeline: pose extraction → metrics → heuristics → visualizer → dashboard → reporter. No changes to those modules are required; the web app calls them with uploaded video and user height.
