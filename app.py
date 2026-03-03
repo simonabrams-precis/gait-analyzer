@@ -8,7 +8,6 @@ import tempfile
 import streamlit as st
 
 from about_content import render_about_content
-from job_runner import run_analysis
 
 FILMING_TIPS = """
 - **Side view only** — film the runner from the left or right, not front or back.
@@ -86,6 +85,7 @@ def main():
         _cleanup_previous_temp()
         video_path = None
         try:
+            from job_runner import run_analysis
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
                 tmp.write(video_file.getvalue())
                 video_path = tmp.name
@@ -106,7 +106,16 @@ def main():
             st.session_state.analysis_result = out
             st.session_state.analysis_temp_paths = out.get("temp_paths", [])
         except Exception as e:
-            st.error("Analysis failed. Please check your video and try again.")
+            is_env_error = isinstance(e, (ImportError, OSError)) or (
+                getattr(e, "msg", "") or str(e)
+            ).find("libGL") != -1
+            if is_env_error:
+                st.error(
+                    "Video analysis isn't available in this environment (missing system libraries). "
+                    "Run the app locally for full functionality: `streamlit run app.py`"
+                )
+            else:
+                st.error("Analysis failed. Please check your video and try again.")
             with st.expander("Error details"):
                 st.exception(e)
             st.session_state.analysis_result = None
