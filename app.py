@@ -84,6 +84,16 @@ def main():
     if analyze_clicked and video_file is not None:
         _cleanup_previous_temp()
         video_path = None
+        max_frames = None
+        max_width = None
+        try:
+            nf = int(os.environ.get("GAIT_MAX_FRAMES", "450"))
+            nw = int(os.environ.get("GAIT_MAX_WIDTH", "854"))
+            max_frames = nf if nf > 0 else None
+            max_width = nw if nw > 0 else None
+        except ValueError:
+            max_frames = 450
+            max_width = 854
         try:
             from job_runner import run_analysis
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
@@ -100,11 +110,19 @@ def main():
                     video_path,
                     float(height_cm),
                     progress_callback=on_progress,
+                    max_frames=max_frames,
+                    max_width=max_width,
                 )
             progress_bar.progress(1.0)
             status_placeholder.caption("Done.")
             st.session_state.analysis_result = out
             st.session_state.analysis_temp_paths = out.get("temp_paths", [])
+        except MemoryError:
+            st.error(
+                "The server ran out of memory analyzing this video. Try a shorter clip (e.g. 15–20 seconds), "
+                "a lower resolution, or run the app locally for longer videos."
+            )
+            st.session_state.analysis_result = None
         except Exception as e:
             is_env_error = isinstance(e, (ImportError, OSError)) or (
                 getattr(e, "msg", "") or str(e)
@@ -130,6 +148,13 @@ def main():
     if result is None:
         st.info("Upload a video and click **Analyze** to run gait analysis.")
         return
+
+    if result.get("truncated"):
+        n = result.get("frames_used", 0)
+        st.info(
+            f"Video was limited to {n} frames (~{n // 30:.0f} sec at 30 fps) and reduced resolution to avoid running out of memory. "
+            "For full-length analysis, run the app locally or set `GAIT_MAX_FRAMES` / `GAIT_MAX_WIDTH` in your environment."
+        )
 
     results = result["results"]
     summary = results.get("summary", {})

@@ -30,7 +30,13 @@ def _sanitize_fps_for_writer(fps):
     return fps
 
 
-def run_analysis(video_path, height_cm, progress_callback=None):
+def run_analysis(
+    video_path,
+    height_cm,
+    progress_callback=None,
+    max_frames=None,
+    max_width=None,
+):
     """
     Run the full pipeline and return paths to outputs. All outputs are
     written to temp files (delete=False); caller should remove them when done.
@@ -39,13 +45,17 @@ def run_analysis(video_path, height_cm, progress_callback=None):
         video_path: Path to MP4 or MOV.
         height_cm: Runner height in cm.
         progress_callback: Optional callable(percent: float, message: str).
+        max_frames: If set, stop reading after this many frames (saves memory).
+        max_width: If set, resize each frame to this width (aspect preserved).
 
     Returns:
         Dict with: results, annotated_video_path, dashboard_path, report_path,
-        results_path, temp_paths (list of paths to delete later).
+        results_path, temp_paths, truncated (bool), frames_used (int).
     """
     video_path = Path(video_path)
     temp_paths = []
+    truncated = False
+    frames_used = 0
 
     def report(percent, message):
         if progress_callback:
@@ -58,12 +68,22 @@ def run_analysis(video_path, height_cm, progress_callback=None):
             raise RuntimeError(f"Could not open video: {video_path}")
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frames = []
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         while True:
+            if max_frames and max_frames > 0 and len(frames) >= max_frames:
+                truncated = True
+                break
             ret, frame = cap.read()
             if not ret:
                 break
+            if max_width and max_width > 0 and frame.shape[1] > max_width:
+                r = max_width / frame.shape[1]
+                new_w = max_width
+                new_h = int(frame.shape[0] * r)
+                frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
             frames.append(frame)
         cap.release()
+        frames_used = len(frames)
         if not frames:
             raise RuntimeError("No frames read from video")
 
@@ -123,6 +143,10 @@ def run_analysis(video_path, height_cm, progress_callback=None):
         with open(results_path, "w") as f:
             json.dump(results_from_json, f, indent=2)
 
+        if truncated and results_from_json.get("meta"):
+            results_from_json["meta"]["truncated_frames"] = max_frames
+            results_from_json["meta"]["frames_used"] = frames_used
+
         report(100, "Done.")
         return {
             "results": results_from_json,
@@ -131,6 +155,8 @@ def run_analysis(video_path, height_cm, progress_callback=None):
             "report_path": report_path,
             "results_path": results_path,
             "temp_paths": temp_paths,
+            "truncated": truncated,
+            "frames_used": frames_used,
         }
     except Exception:
         for p in temp_paths:

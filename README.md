@@ -91,6 +91,11 @@ The app’s Dockerfile installs the system libraries OpenCV and MediaPipe need, 
 
 **Notes:** On the free tier, the app may sleep after inactivity; the first request after that can be slow. The Dockerfile is already set up to run Streamlit on port 8501; Render maps that for you.
 
+**If the instance runs out of memory** when analyzing a video, the app limits input to **450 frames (~15 sec)** and **854px width** by default so it fits in ~512 MB–1 GB RAM. You can override this with environment variables (e.g. in Render: **Environment** tab):
+- `GAIT_MAX_FRAMES` — max frames to process (default `450`). Lower it (e.g. `300`) if you still get OOM.
+- `GAIT_MAX_WIDTH` — max frame width in pixels (default `854`). Lower it (e.g. `640`) to use less memory.
+For longer or full-resolution analysis, use a larger instance or run the app locally (no limits).
+
 ---
 
 #### Option B: Run with Docker on your computer (test locally)
