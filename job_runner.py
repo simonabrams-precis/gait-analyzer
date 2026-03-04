@@ -30,6 +30,20 @@ def _sanitize_fps_for_writer(fps):
     return fps
 
 
+def _letterbox_to_square(frame):
+    """Pad frame to square so MediaPipe pose (NORM_RECT path) works without IMAGE_DIMENSIONS warning."""
+    h, w = frame.shape[:2]
+    if w == h:
+        return frame
+    size = max(w, h)
+    pad_w = (size - w) // 2
+    pad_h = (size - h) // 2
+    return cv2.copyMakeBorder(
+        frame, pad_h, size - h - pad_h, pad_w, size - w - pad_w,
+        cv2.BORDER_CONSTANT, value=(0, 0, 0),
+    )
+
+
 def run_analysis(
     video_path,
     height_cm,
@@ -81,6 +95,7 @@ def run_analysis(
                 new_w = max_width
                 new_h = int(frame.shape[0] * r)
                 frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            frame = _letterbox_to_square(frame)
             frames.append(frame)
         cap.release()
         frames_used = len(frames)

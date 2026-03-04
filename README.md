@@ -96,6 +96,8 @@ The app’s Dockerfile installs the system libraries OpenCV and MediaPipe need, 
 - `GAIT_MAX_WIDTH` — max frame width in pixels (default `854`). Lower it (e.g. `640`) to use less memory.
 For longer or full-resolution analysis, use a larger instance or run the app locally (no limits).
 
+**Log warnings:** You may see TensorFlow Lite or MediaPipe messages such as "Feedback manager requires a model with a single signature inference" or "NORM_RECT without IMAGE_DIMENSIONS". The app letterboxes each frame to square before pose detection to satisfy MediaPipe’s requirements and reduce the NORM_RECT warning; the annotated output video may be square (letterboxed). The "feedback manager" message is harmless and can be ignored.
+
 ---
 
 #### Option B: Run with Docker on your computer (test locally)
