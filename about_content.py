@@ -22,6 +22,7 @@ def render_about_content():
 
     4. **You get results** — An annotated video (skeleton overlay), charts, and a short report with recommendations. You can download everything to your own device; nothing is kept on our servers.
     """)
+    st.markdown("## FAQ ##")
     st.markdown("**Are my videos stored?**")
     st.markdown("""
     No. Your video is only used while your analysis is running. It is held temporarily in memory (and in a short-lived temporary file) only for the duration of that run. When you start a new analysis or leave the app, those temporary files are removed. We do not save, archive, or have access to your videos after your session.
