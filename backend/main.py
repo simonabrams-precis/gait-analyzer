@@ -1,14 +1,20 @@
 """
 FastAPI app: runs API, health, CORS.
 """
+import logging
 import os
+import tempfile
 import uuid
 from typing import List
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
+from backend import storage
 from backend.database import get_db
 from backend.models import Run, RunStatus
 from backend.schemas import (
@@ -26,16 +32,30 @@ from backend.storage import (
     upload_file,
 )
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Gait Analyzer API")
 
-origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000").strip().split(",")
+_default_origins = "http://localhost:3000,http://127.0.0.1:3000"
+origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", _default_origins).split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Check server logs."},
+    )
 
 ALLOWED_EXTENSIONS = {"mp4", "mov"}
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
@@ -48,6 +68,19 @@ def _get_run(db: Session, run_id: uuid.UUID) -> Run | None:
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/local-artifacts/{run_id}/{filename}")
+def serve_local_artifact(run_id: str, filename: str):
+    if filename not in ("annotated.mp4", "dashboard.png") or ".." in run_id or "/" in run_id:
+        raise HTTPException(404, "Not found")
+    if not storage.LOCAL_STORAGE_PATH:
+        raise HTTPException(404, "Not found")
+    root = Path(storage.LOCAL_STORAGE_PATH).resolve()
+    path = (root / "processed" / run_id / filename).resolve()
+    if not path.is_file() or not str(path).startswith(str(root)):
+        raise HTTPException(404, "Not found")
+    return FileResponse(path, media_type="video/mp4" if filename.endswith(".mp4") else "image/png")
 
 
 @app.post("/api/runs", response_model=RunCreatedResponse)
@@ -64,17 +97,25 @@ def create_run(
         raise HTTPException(400, "File too large")
     run_id = uuid.uuid4()
     raw_key = raw_video_key(str(run_id))
-    import tempfile
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
         upload_file(tmp_path, raw_key)
+    except RuntimeError as e:
+        if "R2" in str(e) or "LOCAL_STORAGE" in str(e):
+            raise HTTPException(
+                503,
+                "Storage not configured. Set LOCAL_STORAGE_PATH (e.g. .local_storage) or R2 credentials.",
+            ) from e
+        raise
     finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
     run = Run(
         id=run_id,
         height_cm=height_cm,
@@ -83,9 +124,21 @@ def create_run(
         raw_video_r2_key=raw_key,
     )
     db.add(run)
-    db.commit()
-    from backend.worker import process_video
-    process_video.delay(str(run_id), raw_key, height_cm)
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.exception("DB commit failed: %s", e)
+        raise HTTPException(500, "Database error. Check server logs.") from e
+    try:
+        from backend.worker import process_video
+        process_video.delay(str(run_id), raw_key, height_cm)
+    except Exception as e:
+        logger.exception("Failed to enqueue job: %s", e)
+        raise HTTPException(
+            503,
+            "Job queue unavailable. Is Redis running?",
+        ) from e
     return RunCreatedResponse(run_id=run_id, status="processing")
 
 

@@ -30,7 +30,7 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
         sa.Column("height_cm", sa.Integer(), nullable=False),
-        sa.Column("status", sa.Enum("processing", "complete", "failed", name="runstatus"), nullable=False, server_default="processing"),
+        sa.Column("status", postgresql.ENUM("processing", "complete", "failed", name="runstatus", create_type=False), nullable=False, server_default="processing"),
         sa.Column("progress_pct", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("raw_video_r2_key", sa.String(512), nullable=True),
         sa.Column("annotated_video_r2_key", sa.String(512), nullable=True),

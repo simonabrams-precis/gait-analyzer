@@ -60,10 +60,10 @@ def extract_poses(frames, model_complexity=1):
         Frames where no pose is detected have "landmarks": None.
     """
     import cv2
+    import mediapipe as mp
     from mediapipe.tasks.python.core import base_options
     from mediapipe.tasks.python.vision import pose_landmarker
     from mediapipe.tasks.python.vision.core import vision_task_running_mode
-    from mediapipe.tasks.python.vision.core import image as mp_image
 
     model_path = _ensure_model()
     base_opts = base_options.BaseOptions(model_asset_path=model_path)
@@ -80,7 +80,7 @@ def extract_poses(frames, model_complexity=1):
     out = []
     for i, frame in enumerate(frames):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_img = mp_image.Image(image_format=mp_image.ImageFormat.SRGB, data=rgb)
+        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         ts_ms = i * 33
         result = landmarker.detect_for_video(mp_img, ts_ms)
         if not result.pose_landmarks:

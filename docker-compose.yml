@@ -32,7 +32,11 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/gait_analyzer
       REDIS_URL: redis://redis:6379/0
-      CORS_ORIGINS: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      LOCAL_STORAGE_PATH: /data/local_storage
+      API_BASE_URL: http://localhost:8000
+    volumes:
+      - local_storage:/data/local_storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,9 +51,15 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/gait_analyzer
       REDIS_URL: redis://redis:6379/0
+      LOCAL_STORAGE_PATH: /data/local_storage
+    volumes:
+      - local_storage:/data/local_storage
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A backend.worker worker -l info
+
+volumes:
+  local_storage:

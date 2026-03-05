@@ -14,24 +14,45 @@ Analyzes running gait from a side-view video using MediaPipe Pose and rule-based
 - `frontend/` — Next.js 14 (App Router), TypeScript, Tailwind, Recharts, react-dropzone.
 - `backend/` — FastAPI, SQLAlchemy, Celery worker, R2 storage; reuses `pose_extractor`, `metrics`, `heuristics`, `visualizer`, `dashboard`, `reporter`, `job_runner`.
 
-### Local development (Docker: API + worker + Postgres + Redis)
+### Quick start (local testing, no R2)
 
-1. **Start backend and infra:**
+You need **Docker** (Desktop or Engine) and **Python** with backend deps. From the repo root:
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+Then run (uses `docker compose` or `docker-compose`):
+
+```bash
+./scripts/run-local.sh
+```
+
+In another terminal, start the frontend:
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Open http://localhost:3000, upload a video (MP4/MOV) and set height — uploads use local disk (Docker volume) so no Cloudflare R2 is needed.
+
+### Local development (step by step)
+
+1. **Start Postgres and Redis:**
 
    ```bash
    docker-compose up -d postgres redis
    ```
 
-2. **Apply migrations** (install backend deps, then from repo root):
+2. **Apply migrations** (install backend deps first: `pip install -r backend/requirements.txt`):
 
    ```bash
-   pip install -r backend/requirements.txt
    cd backend && alembic upgrade head && cd ..
    ```
 
-   Ensure `DATABASE_URL` points at your Postgres (default: `postgresql://postgres:postgres@localhost:5432/gait_analyzer`).
+   `DATABASE_URL` defaults to `postgresql://postgres:postgres@localhost:5432/gait_analyzer`.
 
-3. **Start API and worker:**
+3. **Start API and worker** (uses local storage by default so uploads work without R2):
 
    ```bash
    docker-compose up api worker
@@ -47,9 +68,9 @@ Analyzes running gait from a side-view video using MediaPipe Pose and rule-based
    npm run dev
    ```
 
-   Set `NEXT_PUBLIC_API_URL=http://localhost:8000` in `frontend/.env.local` (optional; default is localhost:8000).
+   Optional: copy `frontend/.env.local.example` to `frontend/.env.local` and set `NEXT_PUBLIC_API_URL=http://localhost:8000` if your API is elsewhere.
 
-5. **R2 (optional for local):** Configure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` for the API and worker if you want to test uploads. Otherwise, video upload will fail at the R2 upload step.
+5. **R2 (optional):** To use Cloudflare R2 instead of local disk, set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` on the API and worker, and do **not** set `LOCAL_STORAGE_PATH` (or remove it from docker-compose).
 
 ### Environment variables
 
