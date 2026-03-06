@@ -52,6 +52,9 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/gait_analyzer
       REDIS_URL: redis://redis:6379/0
       LOCAL_STORAGE_PATH: /data/local_storage
+      # Cap frames/width to reduce memory (avoids OOM SIGKILL when processing long/large videos)
+      GAIT_MAX_FRAMES: "900"
+      GAIT_MAX_WIDTH: "1280"
     volumes:
       - local_storage:/data/local_storage
     depends_on:
@@ -59,7 +62,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A backend.worker worker -l info
+    command: celery -A backend.worker worker -l info -c 1
 
 volumes:
   local_storage:
