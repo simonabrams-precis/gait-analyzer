@@ -1,6 +1,6 @@
-# Gait Analyzer
+# Runlens.io (formerly Gait Analyzer)
 
-Analyzes running gait from a side-view video using MediaPipe Pose and rule-based heuristics. Produces an annotated video, metrics dashboard, structured JSON results, and a text report with recommendations.
+Analyzes running gait from a side-view video using [MediaPipe Pose](https://chuoling.github.io/mediapipe/solutions/pose.html) and rule-based heuristics. Produces an annotated video, metrics dashboard, structured JSON results, and a text report with recommendations.
 
 - **Phase 2 (Streamlit):** Single-page app in the repo root (`app.py`, `streamlit run app.py`).
 - **Phase 3 (Full-stack):** Next.js frontend + FastAPI backend + Celery + PostgreSQL + Redis + Cloudflare R2. Run history, progress charts, and shareable run links.
@@ -18,11 +18,14 @@ Analyzes running gait from a side-view video using MediaPipe Pose and rule-based
 
 You need **Docker** (Desktop or Engine) and **Python** with backend deps. From the repo root:
 
+1. Copy `.env.example` to `.env` (defaults work for local; no secrets required).
+
 ```bash
+cp .env.example .env
 pip install -r backend/requirements.txt
 ```
 
-Then run (uses `docker compose` or `docker-compose`):
+2. Run (uses `docker compose` or `docker-compose`):
 
 ```bash
 ./scripts/run-local.sh
@@ -38,29 +41,38 @@ Open http://localhost:3000, upload a video (MP4/MOV) and set height — uploads 
 
 ### Local development (step by step)
 
-1. **Start Postgres and Redis:**
+1. **Copy env and install backend deps:**
 
    ```bash
-   docker-compose up -d postgres redis
+   cp .env.example .env
+   pip install -r backend/requirements.txt
    ```
 
-2. **Apply migrations** (install backend deps first: `pip install -r backend/requirements.txt`):
+2. **Start Postgres and Redis:**
+
+   ```bash
+   docker compose up -d postgres redis
+   ```
+
+   (Or `docker-compose` if your Docker version uses the hyphenated command.) Services read `POSTGRES_*`, `REDIS_URL`, etc. from `.env`.
+
+3. **Apply migrations:**
 
    ```bash
    cd backend && alembic upgrade head && cd ..
    ```
 
-   `DATABASE_URL` defaults to `postgresql://postgres:postgres@localhost:5432/gait_analyzer`.
+   `DATABASE_URL` is built from `.env` (e.g. `postgresql://postgres:changeme@localhost:5432/gait_analyzer` if you kept `.env.example` values).
 
-3. **Start API and worker** (uses local storage by default so uploads work without R2):
+4. **Start API and worker** (uses local storage by default so uploads work without R2):
 
    ```bash
-   docker-compose up api worker
+   docker compose up api worker
    ```
 
    API: http://localhost:8000. Docs: http://localhost:8000/docs.
 
-4. **Frontend** (separate terminal):
+5. **Frontend** (separate terminal):
 
    ```bash
    cd frontend
@@ -70,19 +82,31 @@ Open http://localhost:3000, upload a video (MP4/MOV) and set height — uploads 
 
    Optional: copy `frontend/.env.local.example` to `frontend/.env.local` and set `NEXT_PUBLIC_API_URL=http://localhost:8000` if your API is elsewhere.
 
-5. **R2 (optional):** To use Cloudflare R2 instead of local disk, set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` on the API and worker, and do **not** set `LOCAL_STORAGE_PATH` (or remove it from docker-compose).
+6. **R2 (optional):** To use Cloudflare R2 instead of local disk, set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` on the API and worker, and do **not** set `LOCAL_STORAGE_PATH` (or remove it from docker-compose).
 
 ### Environment variables
 
-| Variable | Where | Description |
-|----------|--------|-------------|
-| `DATABASE_URL` | API, worker | PostgreSQL URL (e.g. `postgresql://user:pass@host:5432/db`) |
-| `REDIS_URL` | API, worker | Redis URL (e.g. `redis://localhost:6379/0`) |
-| `CORS_ORIGINS` | API | Allowed frontend origins (e.g. `http://localhost:3000`) |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | API, worker | Cloudflare R2 (S3-compatible) |
-| `NEXT_PUBLIC_API_URL` | Frontend | Backend API base URL (e.g. `https://your-api.onrender.com`) |
-| `GAIT_MAX_FRAMES` | Worker | Max frames to process (e.g. `900` ≈ 30 s at 30 fps). Reduces memory use. |
-| `GAIT_MAX_WIDTH` | Worker | Max frame width in pixels (e.g. `1280`). Reduces memory use. |
+| Variable                                                                      | Where       | Description                                                              |
+| ----------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------ |
+| `DATABASE_URL`                                                                | API, worker | PostgreSQL URL (e.g. `postgresql://user:pass@host:5432/db`)              |
+| `REDIS_URL`                                                                   | API, worker | Redis URL (e.g. `redis://localhost:6379/0`)                              |
+| `CORS_ORIGINS`                                                                | API         | Allowed frontend origins (e.g. `http://localhost:3000`)                  |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | API, worker | Cloudflare R2 (S3-compatible)                                            |
+| `NEXT_PUBLIC_API_URL`                                                         | Frontend    | Backend API base URL (e.g. `https://api.runlens.io`)                     |
+| `GAIT_MAX_FRAMES`                                                             | Worker      | Max frames to process (e.g. `900` ≈ 30 s at 30 fps). Reduces memory use. |
+| `GAIT_MAX_WIDTH`                                                              | Worker      | Max frame width in pixels (e.g. `1280`). Reduces memory use.             |
+
+See `.env.example` at the repo root for a full list and placeholder values. Do not commit `.env` (it is in `.gitignore`).
+
+### Testing
+
+From the repo root with backend deps installed (`pip install -r backend/requirements.txt`):
+
+```bash
+pytest backend/tests/ -v
+```
+
+Optional: `pytest backend/tests/ -v --cov=backend --cov-report=term-missing` for coverage. Lint: `ruff check backend/`.
 
 ### Worker OOM / stalled runs
 
@@ -92,21 +116,37 @@ If the worker is killed with **signal 9 (SIGKILL)** or **WorkerLostError**, the 
 - Set **GAIT_MAX_FRAMES** and **GAIT_MAX_WIDTH** on the worker (e.g. in `docker-compose.yml`) to cap memory; defaults in the stack are 900 frames and 1280 px width.
 - Use shorter or lower-resolution videos. If it still OOMs, lower `GAIT_MAX_FRAMES` (e.g. `450`) or `GAIT_MAX_WIDTH` (e.g. `854`).
 
+### Render: `FileNotFoundError` for `local_storage/raw/.../input.mp4`
+
+On Render the filesystem is **ephemeral**. If you use local storage (no R2), the API writes the uploaded video to disk and enqueues a Celery task. After a restart (e.g. missed heartbeats, deploy, free-tier spin-down) that file is gone, but the task is still in Redis—so the worker fails with `FileNotFoundError` when it tries to copy from `local_storage/raw/<run_id>/input.mp4`.
+
+**Fix:** Use **Cloudflare R2** on Render. In the Render dashboard, set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` on **both** the API (gait-api) and worker (runlens) services. Do **not** set `LOCAL_STORAGE_PATH` on either. Then uploads go to R2 and the worker downloads from R2, so video processing works across restarts. (On Render, local storage is disabled by default so missing R2 yields a clear error.)
+
+### 403 Forbidden on R2 asset URLs (dashboard.png / annotated.mp4)
+
+The frontend loads video and dashboard images via presigned URLs. A 403 means R2 rejected the request—usually credentials or permissions.
+
+**Checks:**
+
+1. **Credentials** — In Cloudflare Dashboard → R2 → Manage R2 API Tokens, confirm the token wasn’t rotated or recreated. If it was, update `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` in the **gait-api** Render service (Environment) and redeploy. API and worker must use the same R2 credentials.
+2. **Token permissions** — The R2 API token must have **Object Read & Write** for the bucket used by `R2_BUCKET_NAME`.
+3. **gait-api logs** — After deploying, open a run detail page and check Render logs for `R2 presigned URL generated bucket=... key=...`. That confirms the API is using R2 and the key; if you see it and the browser still gets 403, the problem is the R2 token (wrong key or insufficient permissions).
+
 ### Deployment
 
-- **Backend (Render):** Use `render.yaml` to create the web service (API), private service (Celery worker), and PostgreSQL. Create a **Redis** instance in the Render dashboard and set `REDIS_URL` for both API and worker. Set R2 and `CORS_ORIGINS` (your Vercel frontend URL) in the dashboard. After first deploy, run Alembic migrations (e.g. via a one-off job or locally with `DATABASE_URL` pointing at Render).
+- **Backend (Render):** Use `render.yaml` to create the web service (API), private service (Celery worker), and PostgreSQL. Create a **Redis** instance in the Render dashboard and set `REDIS_URL` for both API and worker. Set R2 in the dashboard. For CORS: either leave `CORS_ORIGINS` unset (default in code includes `https://runlens.vercel.app`) or set it to a comma-separated list including your Vercel URL. The API Docker image runs `alembic upgrade head` on startup, so migrations apply on each deploy. If you deployed before that change, run once in Render Shell: `cd backend && alembic upgrade head` (script_location is relative to the config, so run from `backend/`).
 - **Frontend (Vercel):** Deploy the `frontend/` directory. Set `NEXT_PUBLIC_API_URL` to the Render API URL. The run result page (`/runs/[id]`) is server-rendered for shareable link previews (og:title, og:description).
 
 ### API routes
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Health check |
-| POST | `/api/runs` | Create run (multipart: file, height_cm) |
-| GET | `/api/runs/{id}/status` | Poll status and progress |
-| GET | `/api/runs/{id}` | Full run detail + signed video/dashboard URLs |
-| GET | `/api/runs` | List runs (for history + charts) |
-| DELETE | `/api/runs/{id}` | Delete run and R2 objects |
+| Method | Path                    | Description                                   |
+| ------ | ----------------------- | --------------------------------------------- |
+| GET    | `/api/health`           | Health check                                  |
+| POST   | `/api/runs`             | Create run (multipart: file, height_cm)       |
+| GET    | `/api/runs/{id}/status` | Poll status and progress                      |
+| GET    | `/api/runs/{id}`        | Full run detail + signed video/dashboard URLs |
+| GET    | `/api/runs`             | List runs (for history + charts)              |
+| DELETE | `/api/runs/{id}`        | Delete run and R2 objects                     |
 
 ---
 
@@ -115,14 +155,15 @@ If the worker is killed with **signal 9 (SIGKILL)** or **WorkerLostError**, the 
 ### Requirements
 
 - Python 3.10+
-- See `requirements.txt` for dependencies (MediaPipe, OpenCV, NumPy, Matplotlib, Streamlit)
+- Backend pipeline (MediaPipe, OpenCV, NumPy, Matplotlib) and Streamlit
 
 ### Setup
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
+pip install streamlit
 ```
 
 ### Usage
@@ -141,10 +182,10 @@ Then open the URL shown in the terminal (usually http://localhost:8501). Upload 
 python analyze_gait.py --video path/to/run.mp4 --height 175
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--video` | Path to MP4 or MOV file (required) |
-| `--height` | Runner height in cm, used to scale distances (required) |
+| Option         | Description                                                   |
+| -------------- | ------------------------------------------------------------- |
+| `--video`      | Path to MP4 or MOV file (required)                            |
+| `--height`     | Runner height in cm, used to scale distances (required)       |
 | `--output-dir` | Where to write outputs (default: same directory as the video) |
 
 **Example with custom output directory:**
@@ -200,6 +241,7 @@ The app’s Dockerfile installs the system libraries OpenCV and MediaPipe need, 
 **Notes:** On the free tier, the app may sleep after inactivity; the first request after that can be slow. The Dockerfile runs Streamlit on port 10000 so Render’s proxy can reach it (Render’s default for Docker web services is port 10000). If you see **502 Bad Gateway**, the service may still be starting (retry after a minute), or it may have run out of memory during analysis—try a shorter/smaller video or lower `GAIT_MAX_FRAMES` / `GAIT_MAX_WIDTH`.
 
 **If the instance runs out of memory** when analyzing a video, the app limits input to **450 frames (~15 sec)** and **854px width** by default so it fits in ~512 MB–1 GB RAM. You can override this with environment variables (e.g. in Render: **Environment** tab):
+
 - `GAIT_MAX_FRAMES` — max frames to process (default `450`). Lower it (e.g. `300`) if you still get OOM.
 - `GAIT_MAX_WIDTH` — max frame width in pixels (default `854`). Lower it (e.g. `640`) to use less memory.
 
@@ -247,12 +289,12 @@ To run again later, use the same `docker run` command; you only need to run `doc
 
 All files are written next to the video (or in `--output-dir`):
 
-| File | Description |
-|------|-------------|
-| `results.json` | Full metrics, per-stride data, flags, and recommendations (source of truth) |
+| File                   | Description                                                                                  |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `results.json`         | Full metrics, per-stride data, flags, and recommendations (source of truth)                  |
 | `<name>_annotated.mp4` | Video with skeleton overlay and live metrics; joints involved in flagged issues shown in red |
-| `<name>_dashboard.png` | Multi-panel chart: cadence, vertical oscillation, knee angle at strike, summary score |
-| `<name>_report.txt` | Plain-text summary and recommendations (also printed to the console) |
+| `<name>_dashboard.png` | Multi-panel chart: cadence, vertical oscillation, knee angle at strike, summary score        |
+| `<name>_report.txt`    | Plain-text summary and recommendations (also printed to the console)                         |
 
 ## Video capture tips
 
@@ -283,14 +325,14 @@ All files are written next to the video (or in `--output-dir`):
 
 The report and JSON flag issues when:
 
-| Metric | Target | Flagged when |
-|--------|--------|--------------|
-| Cadence | ≥ 170 spm | Below 170 steps per minute |
-| Vertical oscillation | ≤ 10 cm | Above 10 cm |
-| Knee flexion at foot strike | ≥ 15° | Below 15° |
-| Overstriding | ≤ 10 cm | Foot strike >10 cm ahead of hip (COM) |
-| Trunk lean | ≤ 15° | Forward lean above 15° |
+| Metric                      | Target    | Flagged when                          |
+| --------------------------- | --------- | ------------------------------------- |
+| Cadence                     | ≥ 170 spm | Below 170 steps per minute            |
+| Vertical oscillation        | ≤ 10 cm   | Above 10 cm                           |
+| Knee flexion at foot strike | ≥ 15°     | Below 15°                             |
+| Overstriding                | ≤ 10 cm   | Foot strike >10 cm ahead of hip (COM) |
+| Trunk lean                  | ≤ 15°     | Forward lean above 15°                |
 
 Stride is defined as **left foot strike to next left foot strike**; foot strikes are detected from ankle landmark motion.
 
-The Streamlit app (`app.py`) and `job_runner.py` wrap the same pipeline: pose extraction → metrics → heuristics → visualizer → dashboard → reporter. No changes to those modules are required; the web app calls them with uploaded video and user height.
+The Streamlit app (`app.py`) imports the pipeline from `backend` (e.g. `backend.job_runner`, `backend.metrics`, `backend.heuristics`). It runs the same steps: pose extraction → metrics → heuristics → visualizer → dashboard → reporter.

@@ -6,10 +6,15 @@
 // API_BASE below). They never go through a Next.js API route, so Vercel’s 4.5MB
 // payload limit does not apply. Keep uploads pointing at the backend URL only.
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
 if (!API_BASE) {
   throw new Error("NEXT_PUBLIC_API_URL is not set. Set it in .env.local (dev) or Vercel env (production).");
 }
+
+const UPLOAD_TOKEN = (process.env.NEXT_PUBLIC_UPLOAD_TOKEN || "").trim();
+
+/** Replace with a real sample run ID when you have an analysis to showcase. */
+export const SAMPLE_RUN_ID = "ab242812-582f-4107-b41c-0011087cd667";
 
 export interface RunCreated {
   run_id: string;
@@ -25,6 +30,7 @@ export interface RunStatus {
 export interface RunListItem {
   run_id: string;
   created_at: string;
+  recorded_at: string | null;
   cadence_avg: number | null;
   vertical_osc_avg_cm: number | null;
   knee_angle_strike_avg_deg: number | null;
@@ -34,6 +40,7 @@ export interface RunListItem {
 export interface RunDetail {
   run_id: string;
   created_at: string;
+  recorded_at: string | null;
   height_cm: number;
   status: string;
   results: {
@@ -55,14 +62,17 @@ function apiUrl(path: string, directToBackend: boolean): string {
 
 async function fetchApi<T>(
   path: string,
-  options?: RequestInit,
+  options?: RequestInit & { cache?: RequestCache },
   directToBackend = false
 ): Promise<T> {
   const url = apiUrl(path, directToBackend);
+  const { cache, ...restOptions } = options ?? {};
   const res = await fetch(url, {
-    ...options,
+    ...restOptions,
+    ...(cache !== undefined && { cache }),
     headers: {
-      ...options?.headers,
+      ...(UPLOAD_TOKEN && { "X-Api-Key": UPLOAD_TOKEN }),
+      ...restOptions.headers,
     },
   });
   if (!res.ok) {
@@ -81,17 +91,22 @@ export async function createRun(formData: FormData): Promise<RunCreated> {
 }
 
 export async function getRunStatus(id: string): Promise<RunStatus> {
-  return fetchApi<RunStatus>(`/api/runs/${id}/status`);
+  return fetchApi<RunStatus>(`/api/runs/${id}/status`, undefined, true);
 }
 
 export async function getRun(id: string): Promise<RunDetail> {
-  return fetchApi<RunDetail>(`/api/runs/${id}`);
+  return fetchApi<RunDetail>(`/api/runs/${id}`, { cache: "no-store" }, true);
 }
 
 export async function listRuns(): Promise<RunListItem[]> {
-  return fetchApi<RunListItem[]>("/api/runs");
+  return fetchApi<RunListItem[]>("/api/runs", undefined, true);
 }
 
-export async function deleteRun(id: string): Promise<void> {
-  return fetchApi<void>(`/api/runs/${id}`, { method: "DELETE" });
+export async function deleteRun(id: string): Promise<boolean> {
+  try {
+    await fetchApi<void>(`/api/runs/${id}`, { method: "DELETE" }, true);
+    return true;
+  } catch {
+    return false;
+  }
 }

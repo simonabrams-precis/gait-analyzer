@@ -2,6 +2,7 @@
 Cloudflare R2 upload/download and presigned URL generation (S3-compatible API).
 When LOCAL_STORAGE_PATH is set and R2 is not configured, uses local disk instead (for dev).
 """
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -13,7 +14,9 @@ R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "")
 R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID", "")
 R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY", "")
 R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "gait-analyzer")
-LOCAL_STORAGE_PATH = os.environ.get("LOCAL_STORAGE_PATH", ".local_storage")
+# On Render the filesystem is ephemeral; require R2 and do not use local storage by default.
+_LOCAL_DEFAULT = "" if os.environ.get("RENDER") == "true" else ".local_storage"
+LOCAL_STORAGE_PATH = os.environ.get("LOCAL_STORAGE_PATH", _LOCAL_DEFAULT)
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 
 _endpoint = f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com" if R2_ACCOUNT_ID else None
@@ -56,6 +59,11 @@ def upload_file(local_path: str | Path, r2_key: str) -> None:
 def download_file(r2_key: str, local_path: str | Path) -> None:
     if _use_local_storage():
         src = _local_path(r2_key)
+        if not src.is_file():
+            raise FileNotFoundError(
+                f"Video not found at {src}. "
+                "On Render/production the filesystem is ephemeral—configure R2 (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME) and do not set LOCAL_STORAGE_PATH."
+            )
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(src), str(local_path))
         return
@@ -80,6 +88,9 @@ def generate_presigned_url(r2_key: str, expiration: int = 3600) -> str:
         "get_object",
         Params={"Bucket": R2_BUCKET_NAME, "Key": r2_key},
         ExpiresIn=expiration,
+    )
+    logging.getLogger(__name__).info(
+        "R2 presigned URL generated bucket=%s key=%s", R2_BUCKET_NAME, r2_key
     )
     return url
 

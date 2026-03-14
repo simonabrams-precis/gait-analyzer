@@ -9,9 +9,12 @@ from typing import List
 
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from backend import storage
@@ -24,8 +27,6 @@ from backend.schemas import (
     RunStatusResponse,
 )
 from backend.storage import (
-    annotated_video_key,
-    dashboard_image_key,
     delete_object,
     generate_presigned_url,
     raw_video_key,
@@ -35,10 +36,26 @@ from backend.storage import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gait Analyzer API")
+limiter = Limiter(key_func=get_remote_address)
+app = FastAPI(title="Runlens.io API")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-_default_origins = "http://localhost:3000,http://127.0.0.1:3000"
-origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", _default_origins).split(",") if o.strip()]
+# If set, POST /api/runs and DELETE /api/runs/{id} require X-Api-Key: <token>.
+# Leave unset to disable the check (e.g. local dev without a token).
+UPLOAD_TOKEN = os.environ.get("UPLOAD_TOKEN", "").strip()
+
+
+def _require_api_key(x_api_key: str = Header(default="")) -> None:
+    if UPLOAD_TOKEN and x_api_key != UPLOAD_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+_default_origins = "http://localhost:3000,http://127.0.0.1:3000,https://www.runlens.io,https://runlens.io"
+_raw = (os.environ.get("CORS_ORIGINS") or "").strip()
+origins = [o.strip() for o in (_raw or _default_origins).split(",") if o.strip()]
+if not origins:
+    origins = [o.strip() for o in _default_origins.split(",") if o.strip()]
+logger.info("CORS allow_origins: %s", origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -52,9 +69,14 @@ app.add_middleware(
 @app.exception_handler(Exception)
 def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception: %s", exc)
+    headers = {}
+    origin = request.headers.get("origin")
+    if origin and origin in origins:
+        headers["Access-Control-Allow-Origin"] = origin
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error. Check server logs."},
+        headers=headers,
     )
 
 ALLOWED_EXTENSIONS = {"mp4", "mov"}
@@ -84,15 +106,18 @@ def serve_local_artifact(run_id: str, filename: str):
 
 
 @app.post("/api/runs", response_model=RunCreatedResponse)
-def create_run(
+@limiter.limit("10/hour")
+async def create_run(
+    request: Request,
     file: UploadFile = File(...),
     height_cm: int = Form(..., ge=100, le=250),
     db: Session = Depends(get_db),
+    _: None = Depends(_require_api_key),
 ):
     suffix = (file.filename or "").split(".")[-1].lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, "Only MP4 and MOV files are allowed")
-    content = file.file.read()
+    content = await file.read(MAX_FILE_SIZE + 1)
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(400, "File too large")
     run_id = uuid.uuid4()
@@ -165,6 +190,7 @@ def get_run(run_id: uuid.UUID, db: Session = Depends(get_db)):
     detail = RunDetail(
         run_id=run.id,
         created_at=run.created_at,
+        recorded_at=run.recorded_at,
         height_cm=run.height_cm,
         status=run.status.value,
         results=run.results_json,
@@ -189,6 +215,7 @@ def list_runs(db: Session = Depends(get_db)):
             RunListItem(
                 run_id=r.id,
                 created_at=r.created_at,
+                recorded_at=r.recorded_at,
                 cadence_avg=summary.get("cadence_avg"),
                 vertical_osc_avg_cm=summary.get("vertical_osc_avg_cm"),
                 knee_angle_strike_avg_deg=summary.get("knee_angle_strike_avg_deg"),
@@ -199,13 +226,16 @@ def list_runs(db: Session = Depends(get_db)):
 
 
 @app.delete("/api/runs/{run_id}", status_code=204)
-def delete_run(run_id: uuid.UUID, db: Session = Depends(get_db)):
+def delete_run(run_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(_require_api_key)):
     run = _get_run(db, run_id)
     if not run:
         raise HTTPException(404, "Run not found")
-    for key in [run.raw_video_r2_key, run.annotated_video_r2_key, run.dashboard_image_r2_key]:
-        if key:
-            delete_object(key)
+    try:
+        for key in [run.raw_video_r2_key, run.annotated_video_r2_key, run.dashboard_image_r2_key]:
+            if key:
+                delete_object(key)
+    except Exception as e:
+        logger.warning("R2/local delete failed for run %s: %s", run_id, e)
     db.delete(run)
     db.commit()
     return None

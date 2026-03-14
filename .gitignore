@@ -1,3 +1,4 @@
+**/.DS_Store
 # Local storage (Phase 3 dev)
 .local_storage/
 
@@ -5,6 +6,8 @@
 .env
 .env.local
 frontend/.env.local
+frontend/.env.production
+frontend/.env.production.local
 
 # Python
 .venv/
@@ -12,9 +15,13 @@ __pycache__/
 *.pyc
 
 # Node
+node_modules/
 frontend/node_modules/
 frontend/.next/
 
 # IDE
 .idea/
 .vscode/
+
+# Claude Code
+.claude/settings.local.json

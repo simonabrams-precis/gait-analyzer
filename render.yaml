@@ -1,11 +1,13 @@
-# Render Blueprint: API, Celery worker, PostgreSQL, Redis
-# Set REDIS_URL, R2_*, and CORS_ORIGINS in the Render dashboard for each service.
+# Render Blueprint: API + in-process Celery worker, PostgreSQL, Redis
+# Worker runs in same container as API when separate worker service is not available on plan.
+# Set REDIS_URL, R2_*, and CORS_ORIGINS in the Render dashboard.
+# If you add a separate worker service (e.g. runlens), set the same R2_* and REDIS_URL there.
 
 databases:
   - name: gait-db
     databaseName: gait_analyzer
     user: gait
-    plan: free
+    plan: basic-256mb
 
 services:
   - type: web
@@ -32,26 +34,12 @@ services:
         sync: false
       - key: R2_BUCKET_NAME
         sync: false
-
-  - type: pserv
-    name: gait-worker
-    runtime: docker
-    dockerfilePath: backend/Dockerfile
-    dockerContext: .
-    plan: free
-    dockerCommand: celery -A backend.worker worker -l info
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: gait-db
-          property: connectionString
-      - key: REDIS_URL
+      # Shared secret for upload/delete endpoints. Set to a random string and
+      # also set NEXT_PUBLIC_UPLOAD_TOKEN to the same value in Vercel.
+      - key: UPLOAD_TOKEN
         sync: false
-      - key: R2_ACCOUNT_ID
+      # Optional: set to reduce worker memory (e.g. GAIT_MAX_FRAMES=600, GAIT_MAX_WIDTH=960)
+      - key: GAIT_MAX_FRAMES
         sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_BUCKET_NAME
+      - key: GAIT_MAX_WIDTH
         sync: false
