@@ -11,8 +11,6 @@ if (!API_BASE) {
   throw new Error("NEXT_PUBLIC_API_URL is not set. Set it in .env.local (dev) or Vercel env (production).");
 }
 
-const UPLOAD_TOKEN = (process.env.NEXT_PUBLIC_UPLOAD_TOKEN || "").trim();
-
 /** Replace with a real sample run ID when you have an analysis to showcase. */
 export const SAMPLE_RUN_ID = "ab242812-582f-4107-b41c-0011087cd667";
 
@@ -71,7 +69,6 @@ async function fetchApi<T>(
     ...restOptions,
     ...(cache !== undefined && { cache }),
     headers: {
-      ...(UPLOAD_TOKEN && { "X-Api-Key": UPLOAD_TOKEN }),
       ...restOptions.headers,
     },
   });
@@ -87,7 +84,7 @@ export async function createRun(formData: FormData): Promise<RunCreated> {
   return fetchApi<RunCreated>("/api/runs", {
     method: "POST",
     body: formData,
-  }, true);
+  });
 }
 
 export async function getRunStatus(id: string): Promise<RunStatus> {
@@ -104,7 +101,7 @@ export async function listRuns(): Promise<RunListItem[]> {
 
 export async function deleteRun(id: string): Promise<boolean> {
   try {
-    await fetchApi<void>(`/api/runs/${id}`, { method: "DELETE" }, true);
+    await fetchApi<void>(`/api/runs/${id}`, { method: "DELETE" });
     return true;
   } catch {
     return false;
